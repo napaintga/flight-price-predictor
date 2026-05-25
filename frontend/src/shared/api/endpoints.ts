@@ -1,0 +1,22 @@
+export const endpoints = {
+  flights: "/api/flights",
+  flightById: (id: string) => `/api/flights/${id}`,
+  flightHistory: (id: string) => `/api/flights/${id}/price-history`,
+  flightPriceSnapshots: (id: string) => `/api/flights/${id}/price-snapshots`,
+  predict: (id: string) => `/api/predictions/flight/${id}`,
+  priceInsights: "/api/price-insights",
+  tickets: "/api/tickets",
+  ticketLocalHistory: "/api/tickets/local-history",
+  analyticsActualVsPred: "/api/analytics/actual-vs-predicted",
+  analyticsMetrics: "/api/analytics/metrics",
+  analyticsDashboard: "/api/analytics/dashboard",
+  predictions : "/api/predictions",
+  authLogin: "/api/auth/login",
+  authRegister: "/api/auth/register",
+  authMe: "/api/auth/me",
+  authLogout: "/api/auth/logout",
+  userSearchHistory: "/api/user/search-history",
+  userFavorites: "/api/user/favorites",
+  userFavoriteById: (ticketId: string) =>
+    `/api/user/favorites/${encodeURIComponent(ticketId)}`,
+};
