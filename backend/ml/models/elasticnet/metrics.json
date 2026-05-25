@@ -1,0 +1,81 @@
+{
+  "mae": 430.4240826829782,
+  "rmse": 770.8535478150801,
+  "r2": 0.0003083397019120193,
+  "mape_pct": 40.75725785746915,
+  "model": "elasticnet",
+  "improved_model": "elasticnet_scaled_tuned",
+  "strategy": "scaled numeric features with validation tuning",
+  "target": "log1p(price)",
+  "rows_in_file_or_read": 5150048,
+  "rows_after_cleaning": 3757116,
+  "rows_used_for_model": 3757116,
+  "train_rows": 2254269,
+  "test_rows": 1502847,
+  "fit_seconds": 2318.601,
+  "best_alpha": 0.0001,
+  "best_l1_ratio": 0.1,
+  "categorical_min_frequency": 25,
+  "validation_size": 0.2,
+  "candidate_count": 12,
+  "refit_on_full_data": true,
+  "final_fit_rows": 3757116,
+  "features": [
+    "days_to_departure",
+    "stops",
+    "duration_minutes",
+    "distance_km",
+    "depart_hour",
+    "recent_price_trend_per_day",
+    "travel_class",
+    "airline",
+    "origin",
+    "destination",
+    "arrival_time",
+    "search_month",
+    "depart_dow",
+    "depart_month"
+  ],
+  "removed_columns": [
+    "flight_id",
+    "departure_date",
+    "departure_time",
+    "passengers_total",
+    "trip_type",
+    "origin_type",
+    "destination_type",
+    "depart_is_weekend",
+    "depart_season",
+    "search_dow",
+    "search_is_weekend",
+    "search_season",
+    "price_per_km",
+    "price_per_hour",
+    "revenue_proxy",
+    "price_segment"
+  ],
+  "training_scope": {
+    "origin_countries": [
+      "GB",
+      "PL"
+    ],
+    "destination_countries": [
+      "IT",
+      "FR"
+    ],
+    "trip_types": [
+      "one-way"
+    ],
+    "travel_classes": [
+      "Economy Class",
+      "Business Class"
+    ]
+  },
+  "normalization": {
+    "version": "travel-class-country-trip-airline-v1",
+    "airline": "canonical aliases, deduplicated and sorted multi-carrier labels",
+    "travel_class": "canonical display labels",
+    "trip_type": "canonical one-way/round-trip labels",
+    "recent_price_trend_per_day": "causal slope from previous local price observations"
+  }
+}
