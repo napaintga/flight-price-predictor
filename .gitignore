@@ -44,12 +44,18 @@ etl/airflow/logs/
 *.db
 *.sqlite
 *.sqlite3
+*.csv
 
 # OS / editors
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+
+*.png
+*.jpg
+
+дослідження/
 
 # Optional large ML artifacts.
 # Uncomment if models should not be stored in Git.
