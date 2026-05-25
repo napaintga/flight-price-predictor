@@ -1,0 +1,114 @@
+x-airflow-common: &airflow-common
+  image: ${AIRFLOW_IMAGE:-apache/airflow:2.8.4}
+  env_file:
+    - ./backend/.env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    _PIP_ADDITIONAL_REQUIREMENTS: "pandas psycopg2-binary holidays python-dotenv fast_flights"
+    PROJECT_ROOT: /opt/airflow/project
+    DATABASE_URL: postgresql://flight_user:flight_pass@db:5432/flight_db
+  volumes:
+    - ./etl/airflow/dags:/opt/airflow/dags
+    - ./etl/airflow/logs:/opt/airflow/logs
+    - ./etl/airflow/plugins:/opt/airflow/plugins
+    - ./:/opt/airflow/project
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    - db
+    - airflow-db
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: flight_user
+      POSTGRES_PASSWORD: flight_pass
+      POSTGRES_DB: flight_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://flight_user:flight_pass@db:5432/flight_db
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: "http://localhost:8000"
+        VITE_ML_BASE_URL: "http://localhost:8000"
+        VITE_ENABLE_DIRECT_ML: "true"
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_pgdata:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username ${AIRFLOW_ADMIN_USER:-admin} \
+          --password ${AIRFLOW_ADMIN_PASSWORD:-admin} \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email ${AIRFLOW_ADMIN_EMAIL:-admin@example.com} || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-trigger-etl:
+    <<: *airflow-common
+    profiles:
+      - trigger
+    command: airflow dags trigger flights_etl_daily
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-scheduler:
+        condition: service_started
+    restart: "no"
+
+volumes:
+  postgres_data:
+  airflow_pgdata:
