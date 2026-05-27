@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import re
 from datetime import date, datetime, timezone
 from functools import lru_cache
@@ -18,9 +19,15 @@ import pandas as pd
 from ml.airline_normalization import normalize_airline_value
 
 MODEL_NAME = "xgboost"
+BASELINE_MODEL_NAMES = {"mean_baseline", "route_mean_baseline"}
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MODELS_DIR = REPO_ROOT / "backend" / "ml" / "models"
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(os.getenv("PROJECT_ROOT") or BACKEND_ROOT.parent).resolve()
+MODELS_DIR = (
+    BACKEND_ROOT / "ml" / "models"
+    if (BACKEND_ROOT / "ml" / "models").exists()
+    else REPO_ROOT / "backend" / "ml" / "models"
+)
 MODEL_DIR = MODELS_DIR / MODEL_NAME
 MODEL_PATH = MODEL_DIR / f"{MODEL_NAME}_model.joblib"
 METRICS_PATH = MODEL_DIR / "metrics.json"
@@ -80,6 +87,8 @@ def _ranked_prediction_model_names() -> tuple[str, ...]:
     rows: list[tuple[float, str]] = []
     for metrics_path in sorted(MODELS_DIR.glob("*/metrics.json")):
         model_name = metrics_path.parent.name
+        if model_name in BASELINE_MODEL_NAMES:
+            continue
         if not _model_path(model_name).exists():
             continue
         try:
