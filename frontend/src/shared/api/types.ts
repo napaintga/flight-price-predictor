@@ -67,6 +67,9 @@ export type PriceSnapshot = {
   price: number | string;
   currency?: string;
   snapshotId?: number | null;
+  source?: "db" | "local_csv" | string;
+  sourceFile?: string;
+  matchMode?: string;
 };
 
 export type PriceInsights = {

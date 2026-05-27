@@ -11,7 +11,7 @@ import {
 } from "../features/flight-details/hooks";
 import { fetchFlightById } from "../features/flight-details/api";
 import type { FlightSearchParams } from "../features/flights/types";
-import type { Flight } from "../shared/api/types";
+import type { Flight, TicketLocalHistoryResponse } from "../shared/api/types";
 import { Card } from "../shared/ui/Card";
 import { Spinner } from "../shared/ui/Spinner";
 import { formatCurrency, formatDateTime } from "../shared/utils/format";
@@ -20,6 +20,13 @@ import { addTicket, fetchTickets, removeTicket } from "../features/tickets/api";
 import { getAuthSnapshot, onAuthChange } from "../features/auth/session";
 
 const LOCAL_TICKETS_KEY = "local-tickets";
+
+const parsePriceNumberValue = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "number") return value;
+  const parsed = Number(String(value).replace(/[^\d.]/g, ""));
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
 
 export const FlightDetailsPage = () => {
   const { t, lang } = useI18n();
@@ -166,13 +173,88 @@ export const FlightDetailsPage = () => {
       durationMinutes: flight.total_duration_minutes ?? undefined,
       stops: flight.stops,
       tripType: effectiveParams.type,
-      travelClass: effectiveParams.travel_class,
+      travelClass:
+        effectiveParams.travel_class ?? firstSegment?.travel_class ?? undefined,
       passengers: passengersCount > 0 ? passengersCount : undefined,
       searchParams: searchParamsString || undefined,
       createdAt: flight.asOf || new Date().toISOString()
     };
   }, [flightQuery.data, effectiveParams, searchParamsString]);
   const localHistoryQuery = useTicketLocalHistory(detailFlightTicket);
+  const chartHistory = useMemo<TicketLocalHistoryResponse | undefined>(() => {
+    const snapshots = priceSnapshotsQuery.data ?? [];
+    const actual = snapshots
+      .map((item) => {
+        const price = parsePriceNumberValue(item.price);
+        if (price === undefined) return undefined;
+        return {
+          ts: item.asOf,
+          price,
+          minPrice: price,
+          maxPrice: price,
+          sampleCount: 1,
+          sourceDate: item.asOf.slice(0, 10),
+          matchMode: "flight-uid-snapshot",
+          airlines: flightQuery.data?.airline ? [flightQuery.data.airline] : [],
+          isForecast: false
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((left, right) => left.ts.localeCompare(right.ts));
+
+    if (actual.length === 0) return localHistoryQuery.data;
+
+    const prices = actual.map((item) => item.price);
+    const availableDays = Array.from(
+      new Set(actual.map((item) => item.sourceDate).filter(Boolean) as string[])
+    ).sort();
+
+    return {
+      ticketId: detailFlightTicket?.id,
+      currency:
+        snapshots[0]?.currency ||
+        flightQuery.data?.currency ||
+        effectiveParams.currency ||
+        "USD",
+      actual,
+      forecast: [],
+      forecastMeta: null,
+      summary: {
+        filesScanned: 0,
+        matchedSnapshots: actual.length,
+        matchedDays: availableDays.length,
+        availableDays,
+        departureDate: effectiveParams.outbound_date ?? null,
+        latestPrice: prices[prices.length - 1] ?? null,
+        minPrice: Math.min(...prices),
+        maxPrice: Math.max(...prices),
+        averagePrice:
+          prices.reduce((sum, price) => sum + price, 0) / prices.length,
+        lastCapturedAt: actual[actual.length - 1]?.ts ?? null
+      },
+      matching: {
+        origin: effectiveParams.departure_id ?? flightQuery.data?.origin ?? null,
+        destination:
+          effectiveParams.arrival_id ?? flightQuery.data?.destination ?? null,
+        travelClass: effectiveParams.travel_class ?? null,
+        tripType: effectiveParams.type ?? null,
+        passengers: effectiveParams.adults ? Number(effectiveParams.adults) : null,
+        strategy: "flight-uid-snapshots"
+      }
+    };
+  }, [
+    detailFlightTicket?.id,
+    effectiveParams.adults,
+    effectiveParams.arrival_id,
+    effectiveParams.currency,
+    effectiveParams.departure_id,
+    effectiveParams.outbound_date,
+    effectiveParams.travel_class,
+    effectiveParams.type,
+    flightQuery.data,
+    localHistoryQuery.data,
+    priceSnapshotsQuery.data
+  ]);
 
   const debugInfo = useMemo(
     () => ({
@@ -324,12 +406,6 @@ export const FlightDetailsPage = () => {
     if (!Number.isNaN(parsed)) return formatCurrency(parsed, displayCurrency);
     return String(value);
   };
-  const parsePriceNumber = (value: number | string | undefined) => {
-    if (value === undefined || value === null) return undefined;
-    if (typeof value === "number") return value;
-    const parsed = Number(String(value).replace(/[^\d.]/g, ""));
-    return Number.isNaN(parsed) ? undefined : parsed;
-  };
   const updateLocalTicketPrice = (updatedFlight: Flight) => {
     if (isLoggedIn) return;
     const baseId = String(updatedFlight.uid ?? updatedFlight.id ?? "flight");
@@ -341,7 +417,7 @@ export const FlightDetailsPage = () => {
       if (!Array.isArray(existing)) return;
       const next = existing.map((item) => {
         if (item?.id !== ticketId && item?.flightId !== baseId) return item;
-        const pricePaid = parsePriceNumber(updatedFlight.price);
+        const pricePaid = parsePriceNumberValue(updatedFlight.price);
         return {
           ...item,
           ...(pricePaid !== undefined ? { pricePaid } : {})
@@ -363,7 +439,8 @@ export const FlightDetailsPage = () => {
       updateLocalTicketPrice(flight);
       await Promise.all([
         priceSnapshotsQuery.refetch(),
-        priceInsightsQuery.refetch()
+        priceInsightsQuery.refetch(),
+        localHistoryQuery.refetch()
       ]);
       if (nextId && nextId !== String(flightId)) {
         const query = searchParamsString ? `?${searchParamsString}` : "";
@@ -396,8 +473,7 @@ export const FlightDetailsPage = () => {
     if (typeof flight.price === "number") {
       pricePaid = flight.price;
     } else {
-      const parsed = Number(String(flight.price).replace(/[^\d.]/g, ""));
-      if (!Number.isNaN(parsed)) pricePaid = parsed;
+      pricePaid = parsePriceNumberValue(flight.price);
     }
     const ticket = {
       id: ticketId,
@@ -569,11 +645,12 @@ export const FlightDetailsPage = () => {
 
       <TicketHistoryChart
         ticket={detailFlightTicket}
-        history={localHistoryQuery.data}
-        isLoading={localHistoryQuery.isLoading}
-        isError={localHistoryQuery.isError}
+        history={chartHistory}
+        isLoading={priceSnapshotsQuery.isLoading && localHistoryQuery.isLoading}
+        isError={priceSnapshotsQuery.isError && localHistoryQuery.isError}
         showForecast={showForecast}
         onToggleForecast={() => setShowForecast((prev) => !prev)}
+        allowForecastToggle={!priceSnapshotsQuery.data?.length}
         title={t("flight.details.chart.title")}
         subtitle={t("flight.details.chart.subtitle")}
       />

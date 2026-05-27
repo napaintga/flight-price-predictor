@@ -15,9 +15,119 @@ from services.serpapi import (
     _map_serpapi_flights,
     _serpapi_request_cached,
 )
+from services.local_ticket_history import build_local_ticket_history
 from services.user_data import _log_search_history
 
 router = APIRouter()
+
+
+def _find_flight_by_uid_or_signature(
+    flights: list[dict[str, Any]],
+    flight_uid: str,
+    params: dict[str, Any],
+) -> dict[str, Any] | None:
+    found = next((f for f in flights if f.get("uid") == flight_uid), None)
+    if found:
+        return found
+
+    matching_keys = _resolve_search_keys(params)
+    signature, signature_weak, signature_route = _find_flight_signature_in_snapshots(
+        matching_keys, flight_uid
+    )
+    if signature:
+        found = next(
+            (f for f in flights if _flight_signature_from_flight(f) == signature),
+            None,
+        )
+    if found:
+        return found
+    if signature_weak:
+        found = next(
+            (
+                f
+                for f in flights
+                if _flight_signature_weak_from_flight(f) == signature_weak
+            ),
+            None,
+        )
+    if found:
+        return found
+    if signature_route:
+        found = next(
+            (
+                f
+                for f in flights
+                if _flight_signature_route_from_flight(f) == signature_route
+            ),
+            None,
+        )
+    return found
+
+
+def _ticket_from_flight_for_local_history(
+    flight: dict[str, Any],
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    first_segment = (flight.get("segments") or [{}])[0]
+    last_segment = (flight.get("segments") or [{}])[-1]
+    passengers = 0
+    for key in ("adults", "children", "infants_in_seat", "infants_on_lap"):
+        try:
+            passengers += int(params.get(key) or 0)
+        except (TypeError, ValueError):
+            pass
+
+    return {
+        "id": f"snapshot-{flight.get('uid') or flight.get('id')}",
+        "flightId": str(flight.get("uid") or flight.get("id") or ""),
+        "origin": flight.get("origin") or params.get("departure_id"),
+        "destination": flight.get("destination") or params.get("arrival_id"),
+        "originName": (first_segment.get("departure_airport") or {}).get("name"),
+        "destinationName": (last_segment.get("arrival_airport") or {}).get("name"),
+        "airline": flight.get("airline"),
+        "departAt": flight.get("departAt") or params.get("outbound_date"),
+        "currency": flight.get("currency") or params.get("currency") or "USD",
+        "duration": flight.get("duration"),
+        "durationMinutes": flight.get("total_duration_minutes"),
+        "stops": flight.get("stops"),
+        "tripType": params.get("type"),
+        "travelClass": params.get("travel_class"),
+        "passengers": passengers or None,
+        "searchParams": "&".join(
+            f"{key}={value}" for key, value in params.items() if value is not None
+        ),
+        "createdAt": flight.get("asOf"),
+    }
+
+
+def _merge_db_and_local_price_snapshots(
+    db_snapshots: list[dict[str, Any]],
+    local_history: dict[str, Any] | None,
+    currency: str | None,
+) -> list[dict[str, Any]]:
+    merged = [{**item, "source": item.get("source") or "db"} for item in db_snapshots]
+    db_days = {
+        str(item.get("asOf") or "")[:10]
+        for item in db_snapshots
+        if item.get("asOf")
+    }
+    for point in (local_history or {}).get("actual") or []:
+        ts = point.get("ts")
+        day = str(point.get("sourceDate") or ts or "")[:10]
+        if not ts or day in db_days:
+            continue
+        merged.append(
+            {
+                "asOf": ts,
+                "price": point.get("price"),
+                "currency": currency or (local_history or {}).get("currency"),
+                "snapshotId": None,
+                "source": "local_csv",
+                "sourceFile": point.get("sourceFile"),
+                "matchMode": point.get("matchMode"),
+            }
+        )
+    return sorted(merged, key=lambda item: str(item.get("asOf") or ""), reverse=True)
 
 
 @router.get("/api/flights")
@@ -196,35 +306,7 @@ def flight_details(
     }
 
     flights = _map_serpapi_flights(res["data"], meta)
-    found = next((f for f in flights if f.get("uid") == flight_uid), None)
-    if not found:
-        matching_keys = _resolve_search_keys(params)
-        signature, signature_weak, signature_route = _find_flight_signature_in_snapshots(
-            matching_keys, flight_uid
-        )
-        if signature:
-            found = next(
-                (f for f in flights if _flight_signature_from_flight(f) == signature),
-                None,
-            )
-        if not found and signature_weak:
-            found = next(
-                (
-                    f
-                    for f in flights
-                    if _flight_signature_weak_from_flight(f) == signature_weak
-                ),
-                None,
-            )
-        if not found and signature_route:
-            found = next(
-                (
-                    f
-                    for f in flights
-                    if _flight_signature_route_from_flight(f) == signature_route
-                ),
-                None,
-            )
+    found = _find_flight_by_uid_or_signature(flights, flight_uid, params)
     if not found:
         raise HTTPException(status_code=404, detail="Flight not found in this search snapshot.")
     return found
@@ -408,6 +490,29 @@ def price_snapshots(
     search_keys = _resolve_search_keys(params)
     if not search_keys:
         return []
-    return _build_price_snapshots(
+    db_snapshots = _build_price_snapshots(
         search_keys=search_keys, flight_uid=flight_uid, currency=currency
+    )
+    local_history = None
+    try:
+        res = _serpapi_request_cached(params)
+        meta = {
+            "asOf": res["fetched_at"],
+            "fromCache": res["from_cache"],
+            "searchKey": res["search_key"],
+            "snapshotId": res["snapshot_id"],
+            "currency": currency,
+        }
+        flights = _map_serpapi_flights(res["data"], meta)
+        found = _find_flight_by_uid_or_signature(flights, flight_uid, params)
+        if found:
+            local_history = build_local_ticket_history(
+                _ticket_from_flight_for_local_history(found, params)
+            )
+    except Exception:
+        local_history = None
+    return _merge_db_and_local_price_snapshots(
+        db_snapshots=db_snapshots,
+        local_history=local_history,
+        currency=currency,
     )

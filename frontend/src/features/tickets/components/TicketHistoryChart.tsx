@@ -269,9 +269,14 @@ export const TicketHistoryChart = ({
 
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart data={chartData} margin={{ top: 8, right: 20, bottom: 8, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.18} />
-                <XAxis dataKey="ts" tickFormatter={formatAxis} />
+                <XAxis
+                  dataKey="ts"
+                  tickFormatter={formatAxis}
+                  interval={0}
+                  padding={{ left: 18, right: 18 }}
+                />
                 <YAxis
                   tickFormatter={(value) =>
                     formatCurrency(Number(value), displayCurrency)
@@ -338,7 +343,7 @@ export const TicketHistoryChart = ({
                   name={t("tickets.chart.legend.actual")}
                   stroke="#0f766e"
                   strokeWidth={3}
-                  dot={{ r: 3 }}
+                  dot={{ r: 4, strokeWidth: 2 }}
                   activeDot={{ r: 5 }}
                 />
                 {showForecast && forecast.length > 0 && (

@@ -14,6 +14,21 @@ from db.ops import (
     _db_upsert_search_base,
 )
 
+
+def _is_no_results_error(message: Any) -> bool:
+    text = str(message or "").strip().lower()
+    return "no results" in text or "hasn't returned any results" in text
+
+
+def _empty_flights_response(params: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **payload,
+        "search_parameters": payload.get("search_parameters") or params,
+        "best_flights": [],
+        "other_flights": [],
+    }
+
+
 # SerpApi cached request (1/day per search_key, UTC)
 # ---------------------------
 def _serpapi_request_cached(params: dict[str, Any]) -> dict[str, Any]:
@@ -60,7 +75,11 @@ def _serpapi_request_cached(params: dict[str, Any]) -> dict[str, Any]:
 
         # SerpApi may return 200 with {"error": "..."}
         if isinstance(data, dict) and data.get("error"):
-            raise HTTPException(status_code=502, detail=f"SerpApi error payload: {data.get('error')}")
+            print("SerpApi error payload:", data.get("error"))
+            if _is_no_results_error(data.get("error")):
+                data = _empty_flights_response(params_no_cache, data)
+            else:
+                raise HTTPException(status_code=502, detail=f"SerpApi error payload: {data.get('error')}")
 
     except requests.Timeout as exc:
         raise HTTPException(status_code=502, detail=f"SerpApi timeout: {exc}") from exc

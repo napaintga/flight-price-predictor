@@ -15,8 +15,13 @@ from ml.airline_normalization import normalize_airline_value
 
 router = APIRouter()
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MODELS_DIR = REPO_ROOT / "backend" / "ml" / "models"
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = BACKEND_ROOT.parent
+MODELS_DIR = (
+    BACKEND_ROOT / "ml" / "models"
+    if (BACKEND_ROOT / "ml" / "models").exists()
+    else REPO_ROOT / "backend" / "ml" / "models"
+)
 PREDICTION_SAMPLE_ROWS = 75_000
 ACTIVE_MODEL_NAME = "xgboost"
 PREDICTION_COLUMNS = {
