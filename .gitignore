@@ -44,7 +44,9 @@ etl/airflow/logs/
 *.db
 *.sqlite
 *.sqlite3
-*.csv
+*csv
+!flight_2026*.csv
+!world-airports.csv
 
 # OS / editors
 .DS_Store
@@ -55,8 +57,9 @@ Thumbs.db
 *.png
 *.jpg
 
-дослідження/
 
+summary.md
+дослідження/
 # Optional large ML artifacts.
 # Uncomment if models should not be stored in Git.
 # backend/ml/models/

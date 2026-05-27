@@ -39,6 +39,9 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql://flight_user:flight_pass@db:5432/flight_db
+      PROJECT_ROOT: /app
+    volumes:
+      - ./etl:/app/etl:ro
     depends_on:
       - db
     ports:
@@ -83,7 +86,12 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
-    command: webserver
+    command:
+      - bash
+      - -c
+      - |
+        rm -f /opt/airflow/airflow-webserver.pid
+        exec airflow webserver
     ports:
       - "8080:8080"
     depends_on:
