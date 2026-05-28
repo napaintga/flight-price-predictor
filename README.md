@@ -210,6 +210,25 @@ curl "http://localhost:8000/api/flights?departure_id=CDG&arrival_id=KRK&outbound
 6. Переглянути прогнозовану ціну, історію зміни ціни та рекомендаційні інсайти.
 7. За потреби додати квиток до обраного або перейти на сторінку аналітики.
 
+---
+
+## Приклади / скриншоти
+
+### Сторінка пошуку рейсів та список результатів
+![Search Results](./screenshots/search_results.png)
+
+### Сторінка деталей рейсу
+![Flight Details](./screenshots/flight_details.png)
+
+### Блок прогнозування ціни
+![Price Prediction](./screenshots/price_prediction.png)
+
+### Аналітична сторінка
+![Analytics Dashboard 1](./screenshots/analytics_dashboard1.png)
+
+![Analytics Dashboard 2](./screenshots/analytics_dashboard2.png)
+
+---
 
 ## Проблеми і рішення
 
@@ -232,20 +251,5 @@ curl "http://localhost:8000/api/flights?departure_id=CDG&arrival_id=KRK&outbound
 - scikit-learn documentation: https://scikit-learn.org/
 - XGBoost documentation: https://xgboost.readthedocs.io/
 - SerpApi Google Flights API documentation: https://serpapi.com/google-flights-api
-
----
-
-## Приклади / скриншоти
-
-- сторінка пошуку рейсів та список результатів;
-  /screenshots/search_results.png
-- сторінка деталей рейсу;
-  /screenshots/flight_details.png
-- блок прогнозування ціни;
-  /screenshots/price_prediction.png
-- аналітична сторінка.
-  /screenshots/analytics_dashboard1.png
-  /screenshots/analytics_dashboard2.png
-
 
 ---
