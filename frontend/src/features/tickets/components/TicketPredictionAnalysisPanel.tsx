@@ -74,7 +74,7 @@ const buildAnalysis = (
   const currentPrice =
     history.summary.latestPrice ?? getPrice(latestActual) ?? ticket.pricePaid;
   const forecastHighest = maxNumber([
-    ...forecast.map((point) => point.upper ?? point.price),
+    ...forecast.map((point) => point.price),
     history.summary.maxPrice,
     currentPrice
   ]);

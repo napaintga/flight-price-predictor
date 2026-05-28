@@ -16,7 +16,7 @@ import pandas as pd
 
 from core import _iso_z, _utc_now
 from ml.airline_normalization import normalize_airline_value
-from services.flight_price_model import predict_flight_price
+from services.flight_price_model import BASELINE_MODEL_NAMES, predict_flight_price
 
 FEATURES_FILE_NAME = "flights_features_all.csv"
 REQUIRED_COLUMNS = ["search_date", "departure_date", "origin", "destination", "price"]
@@ -39,6 +39,7 @@ READ_COLUMNS = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
 _HISTORY_CACHE: dict[tuple[str, tuple[str, int, int]], dict[str, Any]] = {}
 _HISTORY_LOCK = Lock()
 _HISTORY_CACHE_MAX_SIZE = 128
+_HISTORY_CACHE_VERSION = "local-history-no-baseline-forecast-v2"
 
 
 def _repo_root() -> Path:
@@ -583,6 +584,9 @@ def _generate_forecast_points(
         except Exception:
             return _linear_fallback_forecast(actual_points, criteria)
 
+        if prediction.get("model_name") in BASELINE_MODEL_NAMES:
+            return _linear_fallback_forecast(actual_points, criteria)
+
         predicted_price = _to_float(prediction.get("predicted_price"))
         if predicted_price is None:
             return _linear_fallback_forecast(actual_points, criteria)
@@ -673,7 +677,10 @@ def build_local_ticket_history(
             },
         }
 
-    cache_key = (_history_cache_token(criteria), _file_cache_key(path))
+    cache_key = (
+        f"{_HISTORY_CACHE_VERSION}:{_history_cache_token(criteria)}",
+        _file_cache_key(path),
+    )
     with _HISTORY_LOCK:
         cached = _HISTORY_CACHE.get(cache_key)
     if cached is not None:

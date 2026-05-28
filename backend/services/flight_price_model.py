@@ -19,7 +19,7 @@ import pandas as pd
 from ml.airline_normalization import normalize_airline_value
 
 MODEL_NAME = "xgboost"
-BASELINE_MODEL_NAMES = {"mean_baseline", "route_mean_baseline"}
+BASELINE_MODEL_NAMES = {"feature_importance_random_forest", "extra_trees", "route_mean_baseline" , "mlp","embedding_nn"}
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(os.getenv("PROJECT_ROOT") or BACKEND_ROOT.parent).resolve()
@@ -462,7 +462,14 @@ def predict_flight_price(
         predictions.append(
             _prediction_detail(model_name=MODEL_NAME, frame=frame, currency=currency)
         )
-    primary = predictions[0]
+    primary = next(
+        (
+            prediction
+            for prediction in predictions
+            if prediction.get("modelName") not in BASELINE_MODEL_NAMES
+        ),
+        predictions[0],
+    )
 
     return {
         "predicted_price": primary["predictedPrice"],

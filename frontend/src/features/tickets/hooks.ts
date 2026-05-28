@@ -29,5 +29,6 @@ export const useTicketLocalHistory = (ticket?: Ticket) =>
       ticket?.id &&
         ((ticket?.origin && ticket?.destination) || ticket?.searchParams)
     ),
+    placeholderData: (previous) => previous,
     staleTime: 5 * 60_000
   });

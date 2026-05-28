@@ -7,11 +7,16 @@ import { useTicketLocalHistory } from "../features/tickets/hooks";
 import {
   useFlightDetails,
   usePriceInsights,
-  useFlightPriceSnapshots
+  useFlightPriceSnapshots,
+  usePrediction
 } from "../features/flight-details/hooks";
 import { fetchFlightById } from "../features/flight-details/api";
 import type { FlightSearchParams } from "../features/flights/types";
-import type { Flight, TicketLocalHistoryResponse } from "../shared/api/types";
+import type {
+  Flight,
+  TicketHistoryPoint,
+  TicketLocalHistoryResponse
+} from "../shared/api/types";
 import { Card } from "../shared/ui/Card";
 import { Spinner } from "../shared/ui/Spinner";
 import { formatCurrency, formatDateTime } from "../shared/utils/format";
@@ -129,6 +134,7 @@ export const FlightDetailsPage = () => {
     flightId ?? "",
     effectiveParams
   );
+  const predictionQuery = usePrediction(flightId ?? "", effectiveParams);
   const [isSaved, setIsSaved] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showForecast, setShowForecast] = useState(true);
@@ -183,7 +189,79 @@ export const FlightDetailsPage = () => {
   const localHistoryQuery = useTicketLocalHistory(detailFlightTicket);
   const chartHistory = useMemo<TicketLocalHistoryResponse | undefined>(() => {
     const snapshots = priceSnapshotsQuery.data ?? [];
-    const actual = snapshots
+    const addDays = (value: string, days: number) => {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return undefined;
+      date.setDate(date.getDate() + days);
+      return date.toISOString();
+    };
+    const buildLinearForecast = (actual: TicketHistoryPoint[]) => {
+      if (actual.length < 2) return [];
+      const first = actual[0];
+      const latest = actual[actual.length - 1];
+      const firstTime = new Date(first.ts).getTime();
+      const latestTime = new Date(latest.ts).getTime();
+      if (
+        Number.isNaN(firstTime) ||
+        Number.isNaN(latestTime) ||
+        latestTime <= firstTime
+      ) {
+        return [];
+      }
+      const dayDelta = (latestTime - firstTime) / 86_400_000;
+      const slope = (latest.price - first.price) / dayDelta;
+      const uncertainty = Math.max(
+        Math.abs(latest.price - first.price),
+        latest.price * 0.05,
+        10
+      );
+      const points: TicketHistoryPoint[] = [];
+      for (let index = 0; index < 7; index += 1) {
+        const day = index + 1;
+        const ts = addDays(latest.ts, day);
+        if (!ts) continue;
+        const price = Math.max(latest.price + slope * day, 1);
+        points.push({
+          ts,
+          price: Math.round(price * 100) / 100,
+          lower: Math.round(Math.max(price - uncertainty, 1) * 100) / 100,
+          upper: Math.round((price + uncertainty) * 100) / 100,
+          isForecast: true
+        });
+      }
+      return points;
+    };
+    const buildForecast = (actual: TicketHistoryPoint[]) => {
+      const localForecast = localHistoryQuery.data?.forecast ?? [];
+      if (localForecast.length > 0) return localForecast;
+
+      const predictedPrice = predictionQuery.data?.predictedPrice;
+      const lastActual = actual[actual.length - 1];
+      if (!lastActual) return [];
+
+      if (typeof predictedPrice === "number" && Number.isFinite(predictedPrice)) {
+        const candidates = [
+          predictionQuery.data?.createdAt,
+          detailFlightTicket?.departAt,
+          addDays(lastActual.ts, 1)
+        ].filter((value): value is string => Boolean(value));
+        const forecastTs = candidates.find((value) => value > lastActual.ts);
+        if (forecastTs) {
+          const point: TicketHistoryPoint = {
+            ts: forecastTs,
+            price: predictedPrice,
+            lower: predictionQuery.data?.lower,
+            upper: predictionQuery.data?.upper,
+            isForecast: true
+          };
+          return [point];
+        }
+      }
+
+      return buildLinearForecast(actual);
+    };
+
+    const snapshotActual = snapshots
       .map((item) => {
         const price = parsePriceNumberValue(item.price);
         if (price === undefined) return undefined;
@@ -202,23 +280,86 @@ export const FlightDetailsPage = () => {
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
       .sort((left, right) => left.ts.localeCompare(right.ts));
 
-    if (actual.length === 0) return localHistoryQuery.data;
+    const localHistory = localHistoryQuery.data;
+
+    if (
+      !localHistory &&
+      localHistoryQuery.isFetching &&
+      snapshotActual.length > 0
+    ) {
+      return undefined;
+    }
+
+    if (snapshotActual.length === 0) {
+      if (!localHistoryQuery.data) return undefined;
+      const fallbackForecast = buildForecast(localHistoryQuery.data.actual);
+      if (fallbackForecast === localHistoryQuery.data.forecast) {
+        return localHistoryQuery.data;
+      }
+      return {
+        ...localHistoryQuery.data,
+        forecast: fallbackForecast,
+        forecastMeta: fallbackForecast.length
+          ? {
+              source: predictionQuery.data?.predictedPrice
+                ? predictionQuery.data?.source ?? "joblib"
+                : "local-linear-trend",
+              modelName: predictionQuery.data?.predictedPrice
+                ? predictionQuery.data?.modelName
+                : "local-linear-trend",
+              generatedAt:
+                predictionQuery.data?.createdAt ?? new Date().toISOString(),
+              horizonDays: predictionQuery.data?.horizonDays ?? undefined
+            }
+          : localHistoryQuery.data.forecastMeta
+      };
+    }
+
+    const actualByDay = new Map<string, TicketHistoryPoint>();
+    for (const item of localHistory?.actual ?? []) {
+      actualByDay.set(item.sourceDate || item.ts.slice(0, 10), item);
+    }
+    for (const item of snapshotActual) {
+      actualByDay.set(item.sourceDate || item.ts.slice(0, 10), item);
+    }
+    const actual = Array.from(actualByDay.values()).sort((left, right) =>
+      left.ts.localeCompare(right.ts)
+    );
 
     const prices = actual.map((item) => item.price);
     const availableDays = Array.from(
       new Set(actual.map((item) => item.sourceDate).filter(Boolean) as string[])
     ).sort();
+    const forecast = buildForecast(actual);
+    const usesFallbackForecast =
+      forecast.length > 0 && (localHistory?.forecast?.length ?? 0) === 0;
 
     return {
-      ticketId: detailFlightTicket?.id,
+      ticketId: localHistory?.ticketId ?? detailFlightTicket?.id,
       currency:
+        localHistory?.currency ||
         snapshots[0]?.currency ||
         flightQuery.data?.currency ||
         effectiveParams.currency ||
         "USD",
       actual,
-      forecast: [],
-      forecastMeta: null,
+      forecast,
+      forecastMeta:
+        !usesFallbackForecast
+          ? localHistory?.forecastMeta ?? null
+          : forecast.length
+            ? {
+                source: predictionQuery.data?.predictedPrice
+                  ? predictionQuery.data?.source ?? "joblib"
+                  : "local-linear-trend",
+                modelName: predictionQuery.data?.predictedPrice
+                  ? predictionQuery.data?.modelName
+                  : "local-linear-trend",
+                generatedAt:
+                  predictionQuery.data?.createdAt ?? new Date().toISOString(),
+                horizonDays: predictionQuery.data?.horizonDays ?? forecast.length
+              }
+            : null,
       summary: {
         filesScanned: 0,
         matchedSnapshots: actual.length,
@@ -233,17 +374,30 @@ export const FlightDetailsPage = () => {
         lastCapturedAt: actual[actual.length - 1]?.ts ?? null
       },
       matching: {
-        origin: effectiveParams.departure_id ?? flightQuery.data?.origin ?? null,
+        origin:
+          localHistory?.matching.origin ??
+          effectiveParams.departure_id ??
+          flightQuery.data?.origin ??
+          null,
         destination:
-          effectiveParams.arrival_id ?? flightQuery.data?.destination ?? null,
-        travelClass: effectiveParams.travel_class ?? null,
-        tripType: effectiveParams.type ?? null,
-        passengers: effectiveParams.adults ? Number(effectiveParams.adults) : null,
-        strategy: "flight-uid-snapshots"
+          localHistory?.matching.destination ??
+          effectiveParams.arrival_id ??
+          flightQuery.data?.destination ??
+          null,
+        travelClass:
+          localHistory?.matching.travelClass ?? effectiveParams.travel_class ?? null,
+        tripType: localHistory?.matching.tripType ?? effectiveParams.type ?? null,
+        passengers:
+          localHistory?.matching.passengers ??
+          (effectiveParams.adults ? Number(effectiveParams.adults) : null),
+        strategy: localHistory?.matching.strategy
+          ? `flight-uid-snapshots + ${localHistory.matching.strategy}`
+          : "flight-uid-snapshots"
       }
     };
   }, [
     detailFlightTicket?.id,
+    detailFlightTicket?.departAt,
     effectiveParams.adults,
     effectiveParams.arrival_id,
     effectiveParams.currency,
@@ -253,6 +407,8 @@ export const FlightDetailsPage = () => {
     effectiveParams.type,
     flightQuery.data,
     localHistoryQuery.data,
+    localHistoryQuery.isFetching,
+    predictionQuery.data,
     priceSnapshotsQuery.data
   ]);
 
@@ -279,6 +435,21 @@ export const FlightDetailsPage = () => {
         : null,
       priceInsights: Boolean(priceInsightsQuery.data),
       priceSnapshotsCount: priceSnapshotsQuery.data?.length ?? 0,
+      localHistory: {
+        status: localHistoryQuery.status,
+        isLoading: localHistoryQuery.isLoading,
+        isError: localHistoryQuery.isError,
+        actualCount: localHistoryQuery.data?.actual?.length ?? 0,
+        forecastCount: localHistoryQuery.data?.forecast?.length ?? 0,
+        forecastMeta: localHistoryQuery.data?.forecastMeta ?? null,
+        strategy: localHistoryQuery.data?.matching?.strategy ?? null
+      },
+      chartHistory: {
+        actualCount: chartHistory?.actual?.length ?? 0,
+        forecastCount: chartHistory?.forecast?.length ?? 0,
+        forecastMeta: chartHistory?.forecastMeta ?? null,
+        strategy: chartHistory?.matching?.strategy ?? null
+      },
       searchParamsString
     }),
     [
@@ -292,6 +463,11 @@ export const FlightDetailsPage = () => {
       flightQuery.data,
       priceInsightsQuery.data,
       priceSnapshotsQuery.data,
+      localHistoryQuery.status,
+      localHistoryQuery.isLoading,
+      localHistoryQuery.isError,
+      localHistoryQuery.data,
+      chartHistory,
       searchParamsString
     ]
   );
@@ -646,11 +822,14 @@ export const FlightDetailsPage = () => {
       <TicketHistoryChart
         ticket={detailFlightTicket}
         history={chartHistory}
-        isLoading={priceSnapshotsQuery.isLoading && localHistoryQuery.isLoading}
+        isLoading={
+          !chartHistory &&
+          (priceSnapshotsQuery.isLoading || localHistoryQuery.isLoading)
+        }
         isError={priceSnapshotsQuery.isError && localHistoryQuery.isError}
         showForecast={showForecast}
         onToggleForecast={() => setShowForecast((prev) => !prev)}
-        allowForecastToggle={!priceSnapshotsQuery.data?.length}
+        allowForecastToggle
         title={t("flight.details.chart.title")}
         subtitle={t("flight.details.chart.subtitle")}
       />
