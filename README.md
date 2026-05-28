@@ -51,7 +51,6 @@
 | `backend/services/` | Сервіси інтеграції, авторизації та бізнес-логіки |
 | `frontend/src/` | Клієнтський React-застосунок |
 | `etl/` | Скрипти збору, підготовки та експорту даних |
-| `презентація/` | HTML-слайди презентації дипломної роботи |
 | `docker-compose.yml` | Запуск PostgreSQL, backend і frontend в Docker |
 
 ---
@@ -70,8 +69,8 @@
 ### 2. Клонування репозиторію
 
 ```bash
-git clone https://github.com/napaintga/Graduation-Work.git
-cd Graduation-Work
+git clone https://github.com/napaintga/flight-price-predictor.git
+cd flight-price-predictor
 ```
 
 ### 3. Створення `.env` для backend
@@ -211,26 +210,6 @@ curl "http://localhost:8000/api/flights?departure_id=CDG&arrival_id=KRK&outbound
 6. Переглянути прогнозовану ціну, історію зміни ціни та рекомендаційні інсайти.
 7. За потреби додати квиток до обраного або перейти на сторінку аналітики.
 
----
-
-## Приклади / скриншоти
-
-У проєкті згенеровано аналітичні графіки та діаграми:
-
-- `docs/generated_figures/`
-- `backend/ml/reports/flight_analysis/charts/`
-- `backend/ml/research/diploma_results/charts/`
-- `дослідження/*/output/charts/`
-
-Для фінальної здачі варто додати окрему папку `screenshots/` зі скриншотами інтерфейсу:
-
-- сторінка пошуку рейсів;
-- список результатів;
-- сторінка деталей рейсу;
-- блок прогнозування ціни;
-- аналітична сторінка.
-
----
 
 ## Проблеми і рішення
 
@@ -254,3 +233,19 @@ curl "http://localhost:8000/api/flights?departure_id=CDG&arrival_id=KRK&outbound
 - XGBoost documentation: https://xgboost.readthedocs.io/
 - SerpApi Google Flights API documentation: https://serpapi.com/google-flights-api
 
+---
+
+## Приклади / скриншоти
+
+- сторінка пошуку рейсів та список результатів;
+  /screenshots/search_results.png
+- сторінка деталей рейсу;
+  /screenshots/flight_details.png
+- блок прогнозування ціни;
+  /screenshots/price_prediction.png
+- аналітична сторінка.
+  /screenshots/analytics_dashboard1.png
+  /screenshots/analytics_dashboard2.png
+
+
+---
