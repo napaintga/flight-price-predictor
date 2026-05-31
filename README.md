@@ -59,10 +59,48 @@
 
 ### 1. Встановлення інструментів
 
-- Git
-- Docker Desktop
-- Python 3.11+
-- Node.js 20+ та npm
+#### 1.1 Git
+
+Завантаження: https://git-scm.com/downloads
+
+Перевірка:
+
+```bash
+git --version
+```
+
+#### 1.2 Docker Desktop
+
+Завантаження: https://www.docker.com/products/docker-desktop/
+
+Перевірка:
+
+```bash
+docker -v
+docker compose version
+```
+
+#### 1.3 Python 3.11+
+
+Завантаження: https://www.python.org/downloads/
+
+Перевірка:
+
+```bash
+python --version
+pip --version
+```
+
+#### 1.4 Node.js 20+ (з npm)
+
+Завантаження: https://nodejs.org/
+
+Перевірка:
+
+```bash
+node -v
+npm -v
+```
 
 Для найпростішого запуску достатньо Docker Desktop.
 
